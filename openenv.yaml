@@ -114,13 +114,13 @@ space:
       Deterministic scalar reward. Computed as:
         score = w_qed * qed + w_sa * sa_norm + w_tanimoto * tanimoto
               + 0.05 * lipinski_score
-              + pains_penalty          (0.0 or -0.20, additive)
+              + pains_penalty          (0.0 or -0.15, additive)
               + novelty_bonus          (Mpro only: +0.05 for novel scaffold)
         All clamped to [0.0, 1.0].
 
       Task-specific weights:
         EGFR:  QED=0.35, SA=0.30, Tanimoto=0.35
-        BCL-2: QED=0.25, SA=0.25, Tanimoto=0.50
+        BCL-2: QED=0.30, SA=0.30, Tanimoto=0.40
         Mpro:  QED=0.40, SA=0.35, Tanimoto=0.25
     fields:
       score:
