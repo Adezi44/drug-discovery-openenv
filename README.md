@@ -1,11 +1,3 @@
----
-title: Drug Discovery OpenEnv
-emoji: 🧬
-colorFrom: blue
-colorTo: green
-sdk: docker
-app_port: 7860
----
 
 <div align="center">
 
@@ -110,18 +102,6 @@ graph TD
 
 ---
 
-## 📊 Baseline Scores
-*Baseline results using GPT-4o-mini with greedy SMILES sampling.*
-
-| Task | Score | Steps | Status |
-| :--- | :--- | :--- | :--- |
-| Lead Optimization | ~0.45 | 20 | Partial |
-| Scaffold Hopping | ~0.38 | 20 | Partial |
-| De Novo Design | ~0.28 | 15 | Partial |
-
-*Success Thresholds: 0.75 (Easy), 0.65 (Medium), 0.78 (Hard)*
-
----
 
 ## ⚡ API Reference
 
@@ -134,12 +114,12 @@ graph TD
 
 ---
 
-## 🛰️ One-Liner for Judges
+## 🛰️ Summary
 
 > "We built a flight simulator for drug discovery AI—where an agent learns to navigate $10^{60}$ molecules using proxy models grounded in real experimental data, with three objectively graded tasks from lead optimization to de novo design."
 
 ---
 
 <div align="center">
-Built with ❤️ for the Scaler × Meta × PyTorch Hackathon.
+
 </div>
