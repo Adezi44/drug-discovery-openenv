@@ -1,0 +1,64 @@
+version: "1.0"
+name: "Drug Discovery OpenEnv"
+description: >
+  A computational drug discovery benchmark environment where AI agents design molecules
+  to optimize target metrics natively over HTTP via OpenAI Gym-style mechanisms.
+  
+tasks:
+  - id: lead_optimization
+    name: "Lead Optimization (EGFR)"
+    difficulty: "easy"
+    max_attempts: 50
+    success_threshold: 0.8
+    description: "Derive a molecule with improved QED, SA score, and structural similarity to EGFR actives starting from a designated seed SMILES."
+    
+  - id: scaffold_hopping
+    name: "Scaffold Hopping (BCL-2)"
+    difficulty: "medium"
+    max_attempts: 100
+    success_threshold: 0.7
+    description: "Replace the central scaffold while keeping peripheral elements structurally viable relative to a structural BCL-2 seed."
+    
+  - id: de_novo_design
+    name: "De Novo Design (Mpro)"
+    difficulty: "hard"
+    max_attempts: 200
+    success_threshold: 0.85
+    description: "Generate a strictly valid new structural entity completely from scratch converging towards the target characteristics for Mpro."
+
+space:
+  action:
+    type: "string"
+    format: "SMILES"
+    description: "A single, syntactically valid IUPAC SMILES string representing the molecular action."
+    
+  observation:
+    type: "dict"
+    description: "A dictionary tracking explicit internal chemical metrics from the previous action step."
+    schema:
+      qed: "float (0.0 to 1.0)"
+      sa_score: "float (1.0 to 10.0 raw; mapped internally to 0.0 to 1.0)"
+      pains_pass: "float (binary 1.0 for pass, 0.0 for fail)"
+      tanimoto_similarity: "float (0.0 to 1.0)"
+
+api:
+  endpoints:
+    reset: 
+      path: "/reset"
+      method: "POST"
+      description: "Initializes internal state memory given a specific task configuration."
+      payload_schema: {"task_id": "string"}
+    step: 
+      path: "/step"
+      method: "POST"
+      description: "Yields Observation, Reward, and internal State evaluations for a SMILES payload against a target task."
+      payload_schema: {"task_id": "string", "smiles": "string"}
+    state: 
+      path: "/state"
+      method: "GET"
+      description: "Retrieves the current isolated episode state for an agent."
+      query_schema: "?task_id=string"
+    tasks: 
+      path: "/tasks"
+      method: "GET"
+      description: "Returns the global available task suite natively."

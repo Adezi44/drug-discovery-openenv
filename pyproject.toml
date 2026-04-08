@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "drug-discovery-openenv"
+version = "1.0.0"
+description = "A computational drug discovery benchmark environment"
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "pydantic>=2.0",
+    "rdkit",
+    "openai",
+    "requests",
+    "huggingface_hub",
+    "openenv-core>=0.2.0"
+]
+
+[project.scripts]
+server = "server.app:main"
