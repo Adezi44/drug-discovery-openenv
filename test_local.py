@@ -188,7 +188,7 @@ def test_pains_penalty():
     res = requests.post(f"{URL}/step", json={"task_id": task_id, "smiles": pains_smiles}).json()
     metrics = res["observation"]["metrics"]
     check(metrics.get("pains_pass") == 0.0, "Rhodamine B correctly fails PAINS (pains_pass=0.0)")
-    check(metrics.get("pains_penalty") <= -0.14, f"Rhodamine B receives heavy PAINS penalty (got {metrics.get('pains_penalty')})")
+    check(metrics.get("pains_penalty") == -0.15, f"PAINS penalty is exactly -0.15 (got {metrics.get('pains_penalty')})")
 
 
 # ---------------------------------------------------------------------------

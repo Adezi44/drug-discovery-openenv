@@ -42,7 +42,7 @@ class Observation(BaseModel):
         ...,
         description=(
             "Chemical metrics: qed, sa_score_normalized, tanimoto_similarity, "
-            "lipinski_score, pains_pass (1.0=pass), pains_penalty (0.0 or -0.20)"
+            "lipinski_score, pains_pass (1.0=pass), pains_penalty (0.0 or -0.15)"
         ),
     )
 

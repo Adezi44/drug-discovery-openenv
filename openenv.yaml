@@ -37,7 +37,7 @@ tasks:
     name: "Scaffold Hopping (BCL-2 — Lymphoma)"
     difficulty: medium
     max_attempts: 100
-    success_threshold: 0.65
+    success_threshold: 0.55
     target: BCL-2
     reference_compound: "Venetoclax"
     description: >
@@ -50,7 +50,7 @@ tasks:
     name: "De Novo Design (Mpro — SARS-CoV-2)"
     difficulty: hard
     max_attempts: 200
-    success_threshold: 0.78
+    success_threshold: 0.72
     target: Mpro
     reference_compound: "Nirmatrelvir (proxy)"
     description: >
@@ -104,9 +104,8 @@ space:
         range: "1.0 (pass) or 0.0 (fail)"
         description: "Binary indicator: 1.0 if molecule passes PAINS filter, 0.0 if flagged."
       pains_penalty:
-        type: float
-        range: "0.0 (pass) or -0.20 (fail)"
-        description: "Additive PAINS penalty applied to the final reward score."
+        type: number
+        description: "Additive PAINS penalty. 0.0 if passes, -0.15 if flagged."
 
   reward:
     type: float
