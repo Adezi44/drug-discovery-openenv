@@ -22,6 +22,7 @@ import time
 import requests
 from typing import List, Optional
 from openai import OpenAI
+from rdkit import Chem
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -35,7 +36,7 @@ ENV_URL       = os.getenv("ENV_URL", "http://localhost:7860")
 BENCHMARK     = os.getenv("BENCHMARK", "drug-discovery")
 
 MAX_RETRIES_PER_STEP = 3   # retries if LLM returns invalid SMILES
-HISTORY_WINDOW       = 5   # how many past (smiles, score) pairs to include in prompt
+HISTORY_WINDOW       = 8   # how many past (smiles, score) pairs to include in prompt
 
 client = OpenAI(
     api_key=OPENAI_API_KEY if OPENAI_API_KEY else "dummy_key",
@@ -272,30 +273,27 @@ def run_task(task_id: str, task_config: dict) -> None:
         for attempt in range(1, MAX_RETRIES_PER_STEP + 1):
             smiles = get_next_smiles(task_config, history, attempt=attempt)
 
-            step_res = requests.post(
-                f"{ENV_URL}/step",
-                json={"task_id": task_id, "smiles": smiles},
-                timeout=30,
-            )
-            if step_res.status_code != 200:
-                import sys
-                print(f"[WARN] /step error: {step_res.text}", file=sys.stderr, flush=True)
-                err_msg = "server_error"
-                break
-
-            step_data = step_res.json()
-            if step_data["reward"]["is_valid"]:
+            # Validate locally to avoid artificially inflating the agent's attempt count
+            if Chem.MolFromSmiles(smiles) is not None:
                 err_msg = None
                 break
             else:
                 err_msg = "invalid_smiles"
-                # Don't count invalid attempts as wasted steps in history
-                if attempt < MAX_RETRIES_PER_STEP:
-                    continue
+                # If we exhausted retries, the invalid SMILES will be submitted to the environment
+                if attempt == MAX_RETRIES_PER_STEP:
+                    break
 
-        if step_data is None:
-            # Server error — bail out of this task
+        if smiles is None:
             break
+
+        step_res = requests.post(f"{ENV_URL}/step", json={"task_id": task_id, "smiles": smiles}, timeout=30)
+        
+        if step_res.status_code != 200:
+            import sys
+            print(f"[WARN] /step error: {step_res.text}", file=sys.stderr, flush=True)
+            break
+
+        step_data = step_res.json()
 
         reward_info = step_data["reward"]
         state_info  = step_data["state"]
@@ -325,9 +323,12 @@ def run_task(task_id: str, task_config: dict) -> None:
                 "metrics": obs_metrics,
             })
             # Keep history bounded
-            if len(history) > HISTORY_WINDOW * 2:
-                # Retain the best + most recent
-                history = sorted(history, key=lambda x: x["score"], reverse=True)[:HISTORY_WINDOW]
+            if len(history) > HISTORY_WINDOW:
+                # Keep the best 5 and the most recent 3
+                best = sorted(history, key=lambda x: x["score"], reverse=True)[:5]
+                recent = history[-3:]
+                seen = {h["smiles"] for h in best}
+                history = best + [h for h in recent if h["smiles"] not in seen]
 
     log_end(
         success=success,

@@ -56,7 +56,7 @@ class State(BaseModel):
 
 
 class ResetRequest(BaseModel):
-    task_id: str
+    task_id: Optional[str] = Field("lead_optimization", description="Defaults to lead_optimization if no task is specified.")
 
 
 class TaskConfigResponse(BaseModel):
@@ -126,18 +126,24 @@ def root_redirect():
 
 
 @app.post("/reset", response_model=ResetResponse, tags=["OpenEnv"])
-def reset_env(req: ResetRequest):
+def reset_env(req: Optional[ResetRequest] = None):
     """
     Initialise (or re-initialise) an episode for the requested task.
     Returns the initial state and — if the task has a start_smiles — the
     metrics for that reference molecule so the agent can orient itself.
     """
-    if req.task_id not in TASKS:
-        raise HTTPException(status_code=404, detail=f"Task '{req.task_id}' not found.")
+    # If no body was sent at all, use default
+    if req is None:
+        req = ResetRequest(task_id="lead_optimization")
+        
+    task_id = req.task_id if req.task_id else "lead_optimization"
 
-    episode = EpisodeState(req.task_id)
-    active_episodes[req.task_id] = episode
-    config = TASKS[req.task_id]
+    if task_id not in TASKS:
+        raise HTTPException(status_code=404, detail=f"Task '{task_id}' not found.")
+
+    episode = EpisodeState(task_id)
+    active_episodes[task_id] = episode
+    config = TASKS[task_id]
 
     # Evaluate reference molecule so agent sees a useful starting observation
     if config.start_smiles:

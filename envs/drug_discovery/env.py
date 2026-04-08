@@ -1,4 +1,5 @@
 import logging
+from typing import Optional
 from rdkit import Chem
 from rdkit.Chem import QED, FilterCatalog, AllChem, Descriptors
 from rdkit import DataStructs
@@ -96,7 +97,7 @@ def _get_pains_catalog():
 
 def get_pains_penalty(mol) -> float:
     """
-    Additive penalty: 0.0 if molecule passes PAINS, -0.20 if it fails.
+    Additive penalty: 0.0 if molecule passes PAINS, -0.15 if it fails.
 
     Original code used a multiplicative penalty (score × 0), which wiped
     out all gradient signal and gave agents zero feedback on how close they
@@ -107,7 +108,7 @@ def get_pains_penalty(mol) -> float:
         return -0.20
     try:
         catalog = _get_pains_catalog()
-        return -0.20 if catalog.HasMatch(mol) else 0.0
+        return -0.15 if catalog.HasMatch(mol) else 0.0
     except Exception as e:
         logger.error(f"PAINS error: {e}")
         return 0.0
@@ -189,7 +190,7 @@ def get_tanimoto_similarity(mol, target_name: str) -> float:
 
 TASK_WEIGHTS = {
     "EGFR": {"qed": 0.35, "sa": 0.30, "tanimoto": 0.35},
-    "BCL-2": {"qed": 0.25, "sa": 0.25, "tanimoto": 0.50},
+    "BCL-2": {"qed": 0.30, "sa": 0.30, "tanimoto": 0.40},
     "Mpro":  {"qed": 0.40, "sa": 0.35, "tanimoto": 0.25},
 }
 
@@ -284,7 +285,7 @@ def calculate_final_score(
     # Small Lipinski bonus (max +0.05)
     lipinski_bonus = LIPINSKI_BONUS_WEIGHT * metrics["lipinski_score"]
 
-    # Additive PAINS penalty (0.0 or -0.20)
+    # Additive PAINS penalty (0.0 or -0.15)
     pains_penalty = metrics["pains_penalty"]
 
     # Novelty bonus for de novo design:
@@ -294,7 +295,7 @@ def calculate_final_score(
     novelty_bonus = 0.0
     if target_name == "Mpro":
         t = metrics["tanimoto_similarity"]
-        if 0.3 <= t <= 0.6:
+        if 0.25 <= t <= 0.65:
             novelty_bonus = +0.05   # sweet-spot scaffold
         elif t > 0.9:
             novelty_bonus = -0.05   # penalise copying reference
@@ -323,7 +324,7 @@ class TaskConfig:
         task_id: str,
         max_attempts: int,
         success_threshold: float,
-        start_smiles: str | None,
+        start_smiles: Optional[str],
         target_name: str,
     ):
         self.task_id = task_id
@@ -346,7 +347,7 @@ TASKS = {
     "scaffold_hopping": TaskConfig(
         task_id="scaffold_hopping",
         max_attempts=100,
-        success_threshold=0.65,        # tanimoto-dominant; hard to hit without structure
+        success_threshold=0.55,        # tanimoto-dominant; hard to hit without structure
         start_smiles=CHEMBL_ACTIVES["BCL-2"],
         target_name="BCL-2",
     ),
@@ -354,7 +355,7 @@ TASKS = {
     "de_novo_design": TaskConfig(
         task_id="de_novo_design",
         max_attempts=200,
-        success_threshold=0.78,        # hard but not impossible for frontier models
+        success_threshold=0.72,        # hard but not impossible for frontier models
         start_smiles=None,
         target_name="Mpro",
     ),

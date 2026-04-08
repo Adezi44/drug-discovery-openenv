@@ -177,6 +177,21 @@ def test_delta_non_negative():
 
 
 # ---------------------------------------------------------------------------
+# 10. PAINS Penalty Verification
+# ---------------------------------------------------------------------------
+
+def test_pains_penalty():
+    # Rhodamine B — classic PAINS hit
+    pains_smiles = "CCN(CC)c1ccc2c(c1)OC1cc(=[N+](CC)CC)ccc1C2c1ccccc1C(=O)O"
+    task_id = "lead_optimization"
+    requests.post(f"{URL}/reset", json={"task_id": task_id})
+    res = requests.post(f"{URL}/step", json={"task_id": task_id, "smiles": pains_smiles}).json()
+    metrics = res["observation"]["metrics"]
+    check(metrics.get("pains_pass") == 0.0, "Rhodamine B correctly fails PAINS (pains_pass=0.0)")
+    check(metrics.get("pains_penalty") <= -0.14, f"Rhodamine B receives heavy PAINS penalty (got {metrics.get('pains_penalty')})")
+
+
+# ---------------------------------------------------------------------------
 # Run all tests
 # ---------------------------------------------------------------------------
 
@@ -212,6 +227,9 @@ if __name__ == "__main__":
 
     print("\n--- Delta Signal ---")
     test_delta_non_negative()
+
+    print("\n--- PAINS Penalty ---")
+    test_pains_penalty()
 
     print("\n" + "=" * 60)
     if errors:
