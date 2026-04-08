@@ -60,17 +60,17 @@ Each task features a fully deterministic grader and progressive difficulty.
 ### 🟢 Task 1: Lead Optimization (Easy)
 - **Objective**: Optimize a near-perfect molecule (affinity ~200 nM) to < 50 nM without breaking drug-likeness.
 - **Target**: **EGFR Kinase** (implicated in various cancers).
-- **Limit**: 20 attempts.
+- **Limit**: 50 attempts.
 
 ### 🟡 Task 2: Scaffold Hopping (Medium)
 - **Objective**: Structural redesign of a potent but toxic molecule (PAINS match) to retain potency while clearing toxicity.
 - **Target**: **BCL-2 Inhibitor** (implicated in lymphoma).
-- **Limit**: 20 attempts.
+- **Limit**: 100 attempts.
 
 ### 🔴 Task 3: De Novo Design (Hard)
 - **Objective**: Design a molecule from scratch given only the protein pocket shape.
 - **Target**: **COVID-19 Main Protease (Mpro)**.
-- **Limit**: 15 attempts (Maximum challenge).
+- **Limit**: 200 attempts (Maximum challenge).
 
 ---
 
@@ -99,12 +99,12 @@ graph TD
    ```
 2. **Start Server**:
    ```bash
-   uvicorn main:app --host 0.0.0.0 --port 7860
+   uvicorn server.app:app --host 0.0.0.0 --port 7860
    ```
 3. **Run Baseline Inference**:
    ```bash
-   export MODEL_NAME=gpt-4o-mini
-   export OPENAI_API_KEY=your-key
+   export MODEL_NAME="Qwen/Qwen2.5-72B-Instruct"
+   export HF_TOKEN="your-hf-token"
    python inference.py
    ```
 
@@ -119,7 +119,7 @@ graph TD
 | Scaffold Hopping | ~0.38 | 20 | Partial |
 | De Novo Design | ~0.28 | 15 | Partial |
 
-*Success Threshold: 0.85*
+*Success Thresholds: 0.75 (Easy), 0.65 (Medium), 0.78 (Hard)*
 
 ---
 
