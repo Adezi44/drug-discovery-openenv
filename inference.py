@@ -64,7 +64,7 @@ def log_step(
     action_log = action if len(action) <= 80 else action[:77] + "..."
     print(
         f"[STEP] step={step} action={action_log} "
-        f"reward={reward:.4f} done={done_val} error={error_val}",
+        f"reward={reward:.2f} done={done_val} error={error_val}",
         flush=True,
     )
 
@@ -75,10 +75,10 @@ def log_end(
     score: float,
     rewards: List[float],
 ) -> None:
-    rewards_str = ",".join(f"{r:.4f}" for r in rewards)
+    rewards_str = ",".join(f"{r:.2f}" for r in rewards)
     print(
         f"[END] success={str(success).lower()} steps={steps} "
-        f"score={score:.4f} rewards={rewards_str}",
+        f"score={score:.2f} rewards={rewards_str}",
         flush=True,
     )
 
@@ -224,7 +224,8 @@ def get_next_smiles(
         return smiles if smiles else "C1=CC=CC=C1"   # benzene as last-resort fallback
 
     except Exception as e:
-        print(f"[WARN] LLM call failed (attempt {attempt}): {e}", flush=True)
+        import sys
+        print(f"[WARN] LLM call failed (attempt {attempt}): {e}", file=sys.stderr, flush=True)
         return "C1=CC=CC=C1"
 
 
@@ -237,7 +238,8 @@ def run_task(task_id: str, task_config: dict) -> None:
     # Reset episode
     res = requests.post(f"{ENV_URL}/reset", json={"task_id": task_id}, timeout=30)
     if res.status_code != 200:
-        print(f"[WARN] Failed to reset task {task_id}: {res.text}", flush=True)
+        import sys
+        print(f"[WARN] Failed to reset task {task_id}: {res.text}", file=sys.stderr, flush=True)
         return
 
     reset_data = res.json()
@@ -276,7 +278,8 @@ def run_task(task_id: str, task_config: dict) -> None:
                 timeout=30,
             )
             if step_res.status_code != 200:
-                print(f"[WARN] /step error: {step_res.text}", flush=True)
+                import sys
+                print(f"[WARN] /step error: {step_res.text}", file=sys.stderr, flush=True)
                 err_msg = "server_error"
                 break
 
@@ -341,7 +344,8 @@ def run_agent() -> None:
         health = requests.get(f"{ENV_URL}/health", timeout=10)
         health.raise_for_status()
     except Exception as e:
-        print(f"[ERROR] Cannot reach environment at {ENV_URL}: {e}", flush=True)
+        import sys
+        print(f"[ERROR] Cannot reach environment at {ENV_URL}: {e}", file=sys.stderr, flush=True)
         return
 
     # Fetch task catalogue
@@ -350,7 +354,8 @@ def run_agent() -> None:
         res.raise_for_status()
         tasks = res.json()
     except Exception as e:
-        print(f"[ERROR] Failed to fetch tasks from {ENV_URL}: {e}", flush=True)
+        import sys
+        print(f"[ERROR] Failed to fetch tasks from {ENV_URL}: {e}", file=sys.stderr, flush=True)
         return
 
     for task_id, task_config in tasks.items():
