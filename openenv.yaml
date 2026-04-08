@@ -1,64 +1,178 @@
 version: "1.0"
-name: "Drug Discovery OpenEnv"
+name: "drug-discovery-openenv"
+display_name: "Drug Discovery OpenEnv"
 description: >
-  A computational drug discovery benchmark environment where AI agents design molecules
-  to optimize target metrics natively over HTTP via OpenAI Gym-style mechanisms.
-  
+  A scientifically-grounded computational drug discovery benchmark where AI agents
+  design and optimise pharmaceutical molecules (as SMILES strings) against three
+  real biological targets: EGFR (cancer), BCL-2 (lymphoma), and Mpro (SARS-CoV-2).
+  Agents receive multi-component rewards covering drug-likeness (QED), synthetic
+  accessibility (SA), structural similarity (Tanimoto), Lipinski Ro5 compliance,
+  and PAINS filter penalty — providing rich partial-progress signal across the
+  full design trajectory.
+
+tags:
+  - openenv
+  - drug-discovery
+  - cheminformatics
+  - molecular-design
+  - rdkit
+  - smiles
+  - rl-benchmark
+
 tasks:
   - id: lead_optimization
-    name: "Lead Optimization (EGFR)"
-    difficulty: "easy"
+    name: "Lead Optimization (EGFR — Cancer)"
+    difficulty: easy
     max_attempts: 50
-    success_threshold: 0.8
-    description: "Derive a molecule with improved QED, SA score, and structural similarity to EGFR actives starting from a designated seed SMILES."
-    
+    success_threshold: 0.75
+    target: EGFR
+    reference_compound: "Gefitinib"
+    description: >
+      Start from a known EGFR inhibitor (Gefitinib) and make targeted structural
+      modifications to improve QED, synthetic accessibility, and target similarity.
+      Balanced reward weights (QED 0.35 / SA 0.30 / Tanimoto 0.35) make incremental
+      improvements clearly visible in the reward signal.
+
   - id: scaffold_hopping
-    name: "Scaffold Hopping (BCL-2)"
-    difficulty: "medium"
+    name: "Scaffold Hopping (BCL-2 — Lymphoma)"
+    difficulty: medium
     max_attempts: 100
-    success_threshold: 0.7
-    description: "Replace the central scaffold while keeping peripheral elements structurally viable relative to a structural BCL-2 seed."
-    
+    success_threshold: 0.65
+    target: BCL-2
+    reference_compound: "Venetoclax"
+    description: >
+      Replace the central scaffold of Venetoclax while retaining key pharmacophore
+      features (sulfonamide, chlorophenyl, piperazine). Structural similarity to
+      the BCL-2 reference is weighted heavily (0.50), making this genuinely
+      challenging — the agent must maintain activity while changing the scaffold.
+
   - id: de_novo_design
-    name: "De Novo Design (Mpro)"
-    difficulty: "hard"
+    name: "De Novo Design (Mpro — SARS-CoV-2)"
+    difficulty: hard
     max_attempts: 200
-    success_threshold: 0.85
-    description: "Generate a strictly valid new structural entity completely from scratch converging towards the target characteristics for Mpro."
+    success_threshold: 0.78
+    target: Mpro
+    reference_compound: "Nirmatrelvir (proxy)"
+    description: >
+      Design a novel Mpro inhibitor from scratch with no starting molecule.
+      Reward weights prioritise drug-likeness (QED 0.40) and synthesisability
+      (SA 0.35) over similarity (Tanimoto 0.25). A novelty bonus rewards
+      intermediate Tanimoto similarity (0.3–0.6) — novel scaffolds that are
+      still mechanistically related — and penalises direct copying (Tanimoto > 0.9).
 
 space:
   action:
-    type: "string"
-    format: "SMILES"
-    description: "A single, syntactically valid IUPAC SMILES string representing the molecular action."
-    
+    type: string
+    format: SMILES
+    description: >
+      A single, syntactically valid SMILES string representing the candidate molecule.
+      Invalid SMILES (unparseable by RDKit) return score=0.0 and is_valid=False.
+    examples:
+      - "COC1=C(OCCCN2CCOCC2)C=C2C(NC3=CC=C(F)C(Cl)=C3)=NC=NC2=C1"
+      - "CC(=O)Oc1ccccc1C(=O)O"
+      - "C1=CC=CC=C1"
+
   observation:
-    type: "dict"
-    description: "A dictionary tracking explicit internal chemical metrics from the previous action step."
+    type: dict
+    description: >
+      Chemical metrics computed by RDKit for the submitted molecule.
+      All values normalised to [0.0, 1.0] except where noted.
     schema:
-      qed: "float (0.0 to 1.0)"
-      sa_score: "float (1.0 to 10.0 raw; mapped internally to 0.0 to 1.0)"
-      pains_pass: "float (binary 1.0 for pass, 0.0 for fail)"
-      tanimoto_similarity: "float (0.0 to 1.0)"
+      qed:
+        type: float
+        range: "[0.0, 1.0]"
+        description: "Quantitative Estimate of Drug-likeness (Bickerton et al. 2012)"
+      sa_score_normalized:
+        type: float
+        range: "[0.0, 1.0]"
+        description: >
+          Synthetic Accessibility score normalised so 1.0 = easy, 0.0 = hard.
+          Raw SA (Ertl & Schuffenhauer) ranges 1–10; normalised as (10 - raw) / 9.
+          Returns 0.5 as a neutral fallback when sascorer is unavailable.
+      tanimoto_similarity:
+        type: float
+        range: "[0.0, 1.0]"
+        description: >
+          Morgan fingerprint Tanimoto similarity (radius=2, 2048 bits) to the
+          target's reference ChEMBL active compound.
+      lipinski_score:
+        type: float
+        range: "[0.0, 1.0]"
+        description: "Fraction of Lipinski Rule-of-Five criteria satisfied (0/4 to 4/4)."
+      pains_pass:
+        type: float
+        range: "1.0 (pass) or 0.0 (fail)"
+        description: "Binary indicator: 1.0 if molecule passes PAINS filter, 0.0 if flagged."
+      pains_penalty:
+        type: float
+        range: "0.0 (pass) or -0.20 (fail)"
+        description: "Additive PAINS penalty applied to the final reward score."
+
+  reward:
+    type: float
+    range: "[0.0, 1.0]"
+    description: >
+      Deterministic scalar reward. Computed as:
+        score = w_qed * qed + w_sa * sa_norm + w_tanimoto * tanimoto
+              + 0.05 * lipinski_score
+              + pains_penalty          (0.0 or -0.20, additive)
+              + novelty_bonus          (Mpro only: +0.05 for novel scaffold)
+        All clamped to [0.0, 1.0].
+
+      Task-specific weights:
+        EGFR:  QED=0.35, SA=0.30, Tanimoto=0.35
+        BCL-2: QED=0.25, SA=0.25, Tanimoto=0.50
+        Mpro:  QED=0.40, SA=0.35, Tanimoto=0.25
+    fields:
+      score:
+        type: float
+        range: "[0.0, 1.0]"
+      delta:
+        type: float
+        range: "[0.0, 1.0]"
+        description: "Improvement over the episode's previous best score (≥ 0)."
+      is_success:
+        type: bool
+        description: "True if score >= task success_threshold."
+      is_valid:
+        type: bool
+        description: "True if the submitted SMILES was chemically valid."
 
 api:
+  base_path: "/"
   endpoints:
-    reset: 
+    health:
+      path: "/health"
+      method: GET
+      description: "Liveness probe. Returns {status: ok}."
+
+    reset:
       path: "/reset"
-      method: "POST"
-      description: "Initializes internal state memory given a specific task configuration."
-      payload_schema: {"task_id": "string"}
-    step: 
+      method: POST
+      description: >
+        Initialises (or re-initialises) an episode for the specified task.
+        Returns initial state and reference molecule metrics so the agent
+        can orient itself before the first step.
+      payload_schema:
+        task_id: string
+
+    step:
       path: "/step"
-      method: "POST"
-      description: "Yields Observation, Reward, and internal State evaluations for a SMILES payload against a target task."
-      payload_schema: {"task_id": "string", "smiles": "string"}
-    state: 
+      method: POST
+      description: >
+        Submit a SMILES candidate and receive observation, reward, and state.
+        Reward is always in [0.0, 1.0]. Invalid SMILES yield score=0.0.
+      payload_schema:
+        task_id: string
+        smiles: string
+
+    state:
       path: "/state"
-      method: "GET"
-      description: "Retrieves the current isolated episode state for an agent."
+      method: GET
+      description: "Retrieve current episode state without advancing the environment."
       query_schema: "?task_id=string"
-    tasks: 
+
+    tasks:
       path: "/tasks"
-      method: "GET"
-      description: "Returns the global available task suite natively."
+      method: GET
+      description: "Return the full task catalogue with configuration and descriptions."

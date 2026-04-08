@@ -27,7 +27,7 @@ def check_inference_script():
     assert "HF_TOKEN" in content, "HF_TOKEN variable missing"
     assert "OPENAI_API_KEY" in content, "OPENAI_API_KEY variable missing"
     assert "from openai import OpenAI" in content, "OpenAI Client not used"
-    assert "log_event" in content and "\"START\"" in content, "Stdout formats missing"
+    assert "log_start" in content and "[START]" in content, "Stdout formats missing"
     print("✅ inference.py formatting and env checks pass")
 
 def check_env_graders():
@@ -45,7 +45,7 @@ def check_env_graders():
         for smiles in dummy_smiles:
             res = calculate_final_score(smiles, task_config.target_name)
             score = res["score"]
-            assert score >= -0.1 and score <= 1.0, f"Score out of boundary: {score}"
+            assert score >= 0.0 and score <= 1.0, f"Score out of boundary: {score}"
             
     print("✅ Enumerate 3+ tasks graders pass with deterministic range constraints (0.0 to 1.0)")
 

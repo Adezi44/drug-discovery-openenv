@@ -3,36 +3,60 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Dict, Any, Optional
 import uvicorn
 
-from envs.drug_discovery.env import TASKS, calculate_final_score
+from envs.drug_discovery.env import TASKS, calculate_final_score, evaluate_molecule
 
-app = FastAPI(title="OpenEnv - Drug Discovery API")
+app = FastAPI(
+    title="Drug Discovery OpenEnv",
+    description=(
+        "A computational drug discovery benchmark where AI agents design molecules "
+        "(as SMILES strings) to optimise QED, SA score, Tanimoto similarity, and "
+        "PAINS compliance. Implements the full OpenEnv step/reset/state/tasks API."
+    ),
+    version="1.0.0",
+)
 
-# --- Pydantic v2 Models ---
+
+# ---------------------------------------------------------------------------
+# Pydantic v2 Models
+# ---------------------------------------------------------------------------
+
 class Action(BaseModel):
-    task_id: str
-    smiles: str
+    task_id: str = Field(..., description="One of: lead_optimization, scaffold_hopping, de_novo_design")
+    smiles: str = Field(..., description="A valid SMILES string representing the candidate molecule")
+
 
 class Reward(BaseModel):
-    score: float
-    is_success: bool
-    is_valid: bool
+    score: float = Field(..., ge=0.0, le=1.0, description="Composite reward scalar in [0.0, 1.0]")
+    delta: float = Field(..., ge=0.0, description="Improvement over the episode's previous best score")
+    is_success: bool = Field(..., description="True if score >= task success_threshold")
+    is_valid: bool = Field(..., description="True if the submitted SMILES was chemically valid")
+
 
 class Observation(BaseModel):
-    metrics: Dict[str, Any]
+    metrics: Dict[str, Any] = Field(
+        ...,
+        description=(
+            "Chemical metrics: qed, sa_score_normalized, tanimoto_similarity, "
+            "lipinski_score, pains_pass (1.0=pass), pains_penalty (0.0 or -0.20)"
+        ),
+    )
+
 
 class State(BaseModel):
     task_id: str
     attempts: int
     max_attempts: int
     done: bool
-    current_best_score: float
+    current_best_score: float = Field(..., ge=0.0, le=1.0)
+
 
 class ResetRequest(BaseModel):
     task_id: str
+
 
 class TaskConfigResponse(BaseModel):
     task_id: str
@@ -40,114 +64,194 @@ class TaskConfigResponse(BaseModel):
     success_threshold: float
     start_smiles: Optional[str]
     target_name: str
+    description: str
+
 
 class StepResponse(BaseModel):
     observation: Observation
     reward: Reward
     state: State
 
-# --- In-Memory Episode Trackers ---
+
+class ResetResponse(BaseModel):
+    state: State
+    initial_observation: Observation
+
+
+# ---------------------------------------------------------------------------
+# In-Memory Episode State
+# ---------------------------------------------------------------------------
+
 class EpisodeState:
     def __init__(self, task_id: str):
         self.task_id = task_id
         self.attempts = 0
         self.done = False
-        self.current_best_score = 0.0
+        self.current_best_score: float = 0.0
+
 
 active_episodes: Dict[str, EpisodeState] = {}
 
+TASK_DESCRIPTIONS = {
+    "lead_optimization": (
+        "Start from a known EGFR inhibitor (Gefitinib) and optimise QED, "
+        "synthesisability, and target similarity. Difficulty: Easy."
+    ),
+    "scaffold_hopping": (
+        "Replace the BCL-2 scaffold while retaining peripheral pharmacophores. "
+        "High tanimoto weight makes this challenging. Difficulty: Medium."
+    ),
+    "de_novo_design": (
+        "Design a novel Mpro inhibitor from scratch. Requires balancing drug-likeness, "
+        "synthesisability, and intermediate structural novelty. Difficulty: Hard."
+    ),
+}
 
-# --- Endpoints ---
 
-@app.post("/reset", response_model=State)
+# ---------------------------------------------------------------------------
+# Endpoints
+# ---------------------------------------------------------------------------
+
+@app.get("/health", tags=["Meta"])
+def health_check():
+    """Liveness probe for Hugging Face Spaces and container orchestration."""
+    return {"status": "ok", "service": "Drug Discovery OpenEnv"}
+
+
+@app.post("/reset", response_model=ResetResponse, tags=["OpenEnv"])
 def reset_env(req: ResetRequest):
+    """
+    Initialise (or re-initialise) an episode for the requested task.
+    Returns the initial state and — if the task has a start_smiles — the
+    metrics for that reference molecule so the agent can orient itself.
+    """
     if req.task_id not in TASKS:
-        raise HTTPException(status_code=404, detail="Task not found")
-    
-    state = EpisodeState(req.task_id)
-    active_episodes[req.task_id] = state
+        raise HTTPException(status_code=404, detail=f"Task '{req.task_id}' not found.")
+
+    episode = EpisodeState(req.task_id)
+    active_episodes[req.task_id] = episode
     config = TASKS[req.task_id]
-    
-    return State(
-        task_id=state.task_id,
-        attempts=state.attempts,
-        max_attempts=config.max_attempts,
-        done=state.done,
-        current_best_score=state.current_best_score
+
+    # Evaluate reference molecule so agent sees a useful starting observation
+    if config.start_smiles:
+        initial_metrics = evaluate_molecule(config.start_smiles, config.target_name)
+    else:
+        initial_metrics = {"message": "No reference SMILES — generate from scratch."}
+
+    return ResetResponse(
+        state=State(
+            task_id=episode.task_id,
+            attempts=episode.attempts,
+            max_attempts=config.max_attempts,
+            done=episode.done,
+            current_best_score=episode.current_best_score,
+        ),
+        initial_observation=Observation(metrics=initial_metrics),
     )
 
-@app.post("/step", response_model=StepResponse)
-def step_env(action: Action):
-    if action.task_id not in active_episodes:
-        raise HTTPException(status_code=400, detail="Task has not been reset or initialized.")
-    if action.task_id not in TASKS:
-        raise HTTPException(status_code=404, detail="Task not found configuration.")
 
-    state = active_episodes[action.task_id]
+@app.post("/step", response_model=StepResponse, tags=["OpenEnv"])
+def step_env(action: Action):
+    """
+    Submit a SMILES string and receive observation, reward, and updated state.
+
+    Reward is always in [0.0, 1.0].  Invalid SMILES yields 0.0 (not -0.1).
+    The `delta` field indicates improvement over the episode's previous best.
+    Episode ends when success_threshold is reached or max_attempts exceeded.
+    """
+    if action.task_id not in active_episodes:
+        raise HTTPException(
+            status_code=400,
+            detail="Task has not been reset. Call POST /reset first.",
+        )
+    if action.task_id not in TASKS:
+        raise HTTPException(status_code=404, detail=f"Task '{action.task_id}' not found.")
+
+    episode = active_episodes[action.task_id]
     config = TASKS[action.task_id]
 
-    if state.done:
-        raise HTTPException(status_code=400, detail="Episode already completed. Please reset.")
+    if episode.done:
+        raise HTTPException(
+            status_code=400,
+            detail="Episode is already complete. Call POST /reset to start a new one.",
+        )
 
-    state.attempts += 1
+    episode.attempts += 1
 
-    # Evaluate the molecule based on task target
-    result = calculate_final_score(action.smiles, config.target_name)
-    current_score = result["score"]
+    # Score the candidate — pass previous_best for delta calculation
+    result = calculate_final_score(
+        action.smiles,
+        config.target_name,
+        previous_best=episode.current_best_score,
+    )
 
-    if current_score > state.current_best_score:
-        state.current_best_score = current_score
+    current_score: float = result["score"]
+    delta: float = result["delta"]
 
-    # Check termination conditions: Threshold met or ran out of attempts!
+    # Update episode best
+    if current_score > episode.current_best_score:
+        episode.current_best_score = current_score
+
     is_success = current_score >= config.success_threshold
-    
-    if is_success or state.attempts >= config.max_attempts:
-        state.done = True
+    if is_success or episode.attempts >= config.max_attempts:
+        episode.done = True
 
     return StepResponse(
         observation=Observation(metrics=result["metrics"]),
-        reward=Reward(score=current_score, is_success=is_success, is_valid=result["is_valid"]),
+        reward=Reward(
+            score=current_score,
+            delta=delta,
+            is_success=is_success,
+            is_valid=result["is_valid"],
+        ),
         state=State(
-            task_id=state.task_id,
-            attempts=state.attempts,
+            task_id=episode.task_id,
+            attempts=episode.attempts,
             max_attempts=config.max_attempts,
-            done=state.done,
-            current_best_score=state.current_best_score
-        )
+            done=episode.done,
+            current_best_score=episode.current_best_score,
+        ),
     )
 
-@app.get("/state", response_model=State)
+
+@app.get("/state", response_model=State, tags=["OpenEnv"])
 def get_state(task_id: str):
+    """Retrieve current episode state without advancing the environment."""
     if task_id not in active_episodes:
-        raise HTTPException(status_code=404, detail="Episode state not found. Please reset first.")
-    
-    state = active_episodes[task_id]
+        raise HTTPException(
+            status_code=404,
+            detail="Episode not found. Call POST /reset first.",
+        )
+    episode = active_episodes[task_id]
     config = TASKS[task_id]
-    
     return State(
-        task_id=state.task_id,
-        attempts=state.attempts,
+        task_id=episode.task_id,
+        attempts=episode.attempts,
         max_attempts=config.max_attempts,
-        done=state.done,
-        current_best_score=state.current_best_score
+        done=episode.done,
+        current_best_score=episode.current_best_score,
     )
 
-@app.get("/tasks", response_model=Dict[str, TaskConfigResponse])
+
+@app.get("/tasks", response_model=Dict[str, TaskConfigResponse], tags=["OpenEnv"])
 def get_tasks():
-    response = {}
-    for task_id, cfg in TASKS.items():
-        response[task_id] = TaskConfigResponse(
+    """Return the full task catalogue with configuration and descriptions."""
+    return {
+        task_id: TaskConfigResponse(
             task_id=cfg.task_id,
             max_attempts=cfg.max_attempts,
             success_threshold=cfg.success_threshold,
             start_smiles=cfg.start_smiles,
-            target_name=cfg.target_name
+            target_name=cfg.target_name,
+            description=TASK_DESCRIPTIONS.get(task_id, ""),
         )
-    return response
+        for task_id, cfg in TASKS.items()
+    }
+
 
 def main():
-    uvicorn.run("server.app:app", host="0.0.0.0", port=7860)
+    uvicorn.run("server.app:app", host="0.0.0.0", port=7860, reload=False)
+
 
 if __name__ == "__main__":
     main()
-
