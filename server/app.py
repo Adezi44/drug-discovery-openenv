@@ -3,6 +3,7 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
 from typing import Dict, Any, Optional
 import uvicorn
@@ -116,6 +117,12 @@ TASK_DESCRIPTIONS = {
 def health_check():
     """Liveness probe for Hugging Face Spaces and container orchestration."""
     return {"status": "ok", "service": "Drug Discovery OpenEnv"}
+
+
+@app.get("/", include_in_schema=False)
+def root_redirect():
+    """Redirect root traffic to Swagger UI so the Hugging Face Space looks nice."""
+    return RedirectResponse(url="/docs")
 
 
 @app.post("/reset", response_model=ResetResponse, tags=["OpenEnv"])
