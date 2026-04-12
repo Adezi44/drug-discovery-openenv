@@ -182,6 +182,4 @@ python deploy_hf.py
 
 ---
 
-<div align="center">
-  Generated for Scaler × Meta × PyTorch Hackathon 2026
-</div>
+
