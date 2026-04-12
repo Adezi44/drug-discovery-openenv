@@ -7,6 +7,9 @@ from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
 from typing import Dict, Any, Optional
 import uvicorn
+from dotenv import load_dotenv
+
+load_dotenv()
 
 from envs.drug_discovery.env import TASKS, calculate_final_score, evaluate_molecule
 

@@ -23,6 +23,9 @@ import requests
 from typing import List, Optional
 from openai import OpenAI
 from rdkit import Chem
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -32,6 +35,7 @@ API_BASE_URL  = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
 MODEL_NAME    = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
 HF_TOKEN      = os.getenv("HF_TOKEN", "")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY") or HF_TOKEN
+LOCAL_IMAGE_NAME = os.getenv("LOCAL_IMAGE_NAME")
 ENV_URL       = os.getenv("ENV_URL", "http://localhost:7860")
 BENCHMARK     = os.getenv("BENCHMARK", "drug-discovery")
 
@@ -65,10 +69,8 @@ def log_step(
 ) -> None:
     error_val = error if error else "null"
     done_val  = str(done).lower()
-    # Truncate long SMILES to keep logs readable without breaking the format
-    action_log = action if len(action) <= 80 else action[:77] + "..."
     print(
-        f"[STEP] step={step} action={action_log} "
+        f"[STEP] step={step} action={action} "
         f"reward={reward:.2f} done={done_val} error={error_val}",
         flush=True,
     )
@@ -83,7 +85,7 @@ def log_end(
     rewards_str = ",".join(f"{r:.2f}" for r in rewards)
     print(
         f"[END] success={str(success).lower()} steps={steps} "
-        f"score={score:.2f} rewards={rewards_str}",
+        f"score={score:.3f} rewards={rewards_str}",
         flush=True,
     )
 

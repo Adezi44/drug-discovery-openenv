@@ -84,20 +84,34 @@ graph TD
 - RDKit (via `pip install rdkit`)
 
 ### 🚀 Local Quickstart
+
 1. **Clone & Install**:
    ```bash
    git clone https://github.com/your-team/drug-discovery-openenv
+   cd drug-discovery-openenv
    pip install -r requirements.txt
    ```
-2. **Start Server**:
+
+2. **Setup Secrets**:
+   Copy the example environment file and add your keys:
+   ```bash
+   cp .env.example .env
+   # Edit .env with your HF_TOKEN or OPENAI_API_KEY
+   ```
+
+3. **Verify Setup**:
+   Run the submission validator to ensure your environment is configured correctly:
+   ```bash
+   ./validate-submission.sh http://localhost:7860
+   ```
+
+4. **Run Environment & Agent**:
+   In terminal 1 (Start Server):
    ```bash
    uvicorn server.app:app --host 0.0.0.0 --port 7860
    ```
-3. **Run Baseline Inference**:
+   In terminal 2 (Run Agent):
    ```bash
-   export MODEL_NAME="Qwen/Qwen2.5-72B-Instruct"
-   export OPENAI_API_KEY="your-api-key"
-   export TOTAL_RUN_TIMEOUT_SECS=1140
    python inference.py
    ```
 
@@ -115,6 +129,42 @@ graph TD
 
 ---
 
+## Execution and Deployment Guide
+
+Follow this sequence to initialize the environment, verify compliance, and deploy the submission.
+
+### Environment Initialization
+Install required dependencies and configure the environment variables from the provided template:
+```bash
+pip install -r requirements.txt
+cp .env.example .env
+```
+
+> [!IMPORTANT]
+> Ensure the `HF_TOKEN` in your `.env` file has **Write** permissions if you intend to use the automated deployment script in the final step.
+
+### Automated Validation
+Confirm API compliance and Docker build-readiness using the standard validation script:
+```bash
+./validate-submission.sh http://localhost:7860
+```
+
+### Local Simulation
+To run the benchmark simulation, launch the environment server and the inference agent in parallel processes:
+
+*   **Process A (Environment Server):**  
+    `uvicorn server.app:app --host 0.0.0.0 --port 7860`
+*   **Process B (Inference Agent):**  
+    `python inference.py`
+
+### Cloud Deployment
+Once locally verified, deploy the complete environment to a Hugging Face Space for evaluation:
+```bash
+python deploy_hf.py
+```
+
+---
+
 ## 🛰️ Summary
 
 > "We built a flight simulator for drug discovery AI—where an agent learns to navigate $10^{60}$ molecules using proxy models grounded in real experimental data, with three objectively graded tasks from lead optimization to de novo design."
@@ -122,5 +172,5 @@ graph TD
 ---
 
 <div align="center">
-
+  Generated for Scaler × Meta × PyTorch Hackathon 2026
 </div>

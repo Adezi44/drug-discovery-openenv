@@ -5,3 +5,4 @@ rdkit
 openai
 requests
 huggingface_hub
+python-dotenv
