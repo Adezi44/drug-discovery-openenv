@@ -37,6 +37,10 @@ BENCHMARK     = os.getenv("BENCHMARK", "drug-discovery")
 
 MAX_RETRIES_PER_STEP = 3   # retries if LLM returns invalid SMILES
 HISTORY_WINDOW       = 8   # how many past (smiles, score) pairs to include in prompt
+REQUEST_TIMEOUT      = float(os.getenv("OPENAI_REQUEST_TIMEOUT", "45"))
+GLOBAL_TIMEOUT_SECS  = int(os.getenv("GLOBAL_TIMEOUT_SECS", "1140"))
+MAX_STEPS_PER_TASK   = int(os.getenv("MAX_STEPS_PER_TASK", "120"))
+TOTAL_RUN_TIMEOUT_SECS = int(os.getenv("TOTAL_RUN_TIMEOUT_SECS", "1140"))
 
 client = OpenAI(
     api_key=OPENAI_API_KEY if OPENAI_API_KEY else "dummy_key",
@@ -219,6 +223,7 @@ def get_next_smiles(
             ],
             temperature=temperature,
             max_tokens=200,
+            timeout=REQUEST_TIMEOUT,
         )
         raw_output = response.choices[0].message.content.strip()
         smiles = extract_smiles(raw_output)
@@ -234,8 +239,10 @@ def get_next_smiles(
 # Main Agent Loop
 # ---------------------------------------------------------------------------
 
-def run_task(task_id: str, task_config: dict) -> None:
+def run_task(task_id: str, task_config: dict, run_deadline: Optional[float] = None) -> None:
     """Run a single task episode and emit structured logs."""
+    task_start = time.time()
+
     # Reset episode
     res = requests.post(f"{ENV_URL}/reset", json={"task_id": task_id}, timeout=30)
     if res.status_code != 200:
@@ -264,6 +271,35 @@ def run_task(task_id: str, task_config: dict) -> None:
         })
 
     while not done:
+        if run_deadline is not None and time.time() >= run_deadline:
+            import sys
+            print(
+                f"[WARN] Global run deadline reached while running task {task_id}",
+                file=sys.stderr,
+                flush=True,
+            )
+            break
+
+        elapsed = time.time() - task_start
+        if elapsed >= GLOBAL_TIMEOUT_SECS:
+            import sys
+            print(
+                f"[WARN] Task {task_id} stopped due to global timeout "
+                f"({elapsed:.1f}s >= {GLOBAL_TIMEOUT_SECS}s)",
+                file=sys.stderr,
+                flush=True,
+            )
+            break
+
+        if steps_taken >= MAX_STEPS_PER_TASK:
+            import sys
+            print(
+                f"[WARN] Task {task_id} stopped at MAX_STEPS_PER_TASK={MAX_STEPS_PER_TASK}",
+                file=sys.stderr,
+                flush=True,
+            )
+            break
+
         steps_taken += 1
         smiles = None
         step_data = None
@@ -359,8 +395,18 @@ def run_agent() -> None:
         print(f"[ERROR] Failed to fetch tasks from {ENV_URL}: {e}", file=sys.stderr, flush=True)
         return
 
+    run_deadline = time.time() + TOTAL_RUN_TIMEOUT_SECS
+
     for task_id, task_config in tasks.items():
-        run_task(task_id, task_config)
+        if time.time() >= run_deadline:
+            import sys
+            print(
+                f"[WARN] Stopping before task {task_id}: total runtime budget exhausted",
+                file=sys.stderr,
+                flush=True,
+            )
+            break
+        run_task(task_id, task_config, run_deadline=run_deadline)
         time.sleep(1)   # brief pause between tasks
 
 

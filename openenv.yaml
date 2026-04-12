@@ -43,7 +43,7 @@ tasks:
     description: >
       Replace the central scaffold of Venetoclax while retaining key pharmacophore
       features (sulfonamide, chlorophenyl, piperazine). Structural similarity to
-      the BCL-2 reference is weighted heavily (0.50), making this genuinely
+      the BCL-2 reference is weighted heavily (0.40), making this genuinely
       challenging — the agent must maintain activity while changing the scaffold.
 
   - id: de_novo_design
@@ -161,6 +161,8 @@ api:
       description: >
         Submit a SMILES candidate and receive observation, reward, and state.
         Reward is always in [0.0, 1.0]. Invalid SMILES yield score=0.0.
+        Response includes explicit done and info fields in OpenEnv style,
+        plus the full state object.
       payload_schema:
         task_id: string
         smiles: string

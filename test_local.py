@@ -181,13 +181,13 @@ def test_delta_non_negative():
 # ---------------------------------------------------------------------------
 
 def test_pains_penalty():
-    # Rhodamine B — classic PAINS hit
-    pains_smiles = "CCN(CC)c1ccc2c(c1)OC1cc(=[N+](CC)CC)ccc1C2c1ccccc1C(=O)O"
+    # Azo-phenol motif that RDKit parses reliably and is flagged by PAINS filters
+    pains_smiles = "Oc1ccccc1N=Nc1ccccc1O"
     task_id = "lead_optimization"
     requests.post(f"{URL}/reset", json={"task_id": task_id})
     res = requests.post(f"{URL}/step", json={"task_id": task_id, "smiles": pains_smiles}).json()
     metrics = res["observation"]["metrics"]
-    check(metrics.get("pains_pass") == 0.0, "Rhodamine B correctly fails PAINS (pains_pass=0.0)")
+    check(metrics.get("pains_pass") == 0.0, "Azo-phenol probe correctly fails PAINS (pains_pass=0.0)")
     check(metrics.get("pains_penalty") == -0.15, f"PAINS penalty is exactly -0.15 (got {metrics.get('pains_penalty')})")
 
 

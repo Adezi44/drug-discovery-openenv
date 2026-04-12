@@ -71,6 +71,8 @@ class TaskConfigResponse(BaseModel):
 class StepResponse(BaseModel):
     observation: Observation
     reward: Reward
+    done: bool
+    info: Dict[str, Any] = Field(default_factory=dict)
     state: State
 
 
@@ -217,6 +219,12 @@ def step_env(action: Action):
             is_success=is_success,
             is_valid=result["is_valid"],
         ),
+        done=episode.done,
+        info={
+            "task_id": action.task_id,
+            "attempts_remaining": max(0, config.max_attempts - episode.attempts),
+            "success_threshold": config.success_threshold,
+        },
         state=State(
             task_id=episode.task_id,
             attempts=episode.attempts,

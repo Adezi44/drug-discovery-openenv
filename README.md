@@ -96,7 +96,8 @@ graph TD
 3. **Run Baseline Inference**:
    ```bash
    export MODEL_NAME="Qwen/Qwen2.5-72B-Instruct"
-   export HF_TOKEN="your-hf-token"
+   export OPENAI_API_KEY="your-api-key"
+   export TOTAL_RUN_TIMEOUT_SECS=1140
    python inference.py
    ```
 

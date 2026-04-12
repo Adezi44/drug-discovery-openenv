@@ -128,7 +128,7 @@ CHEMBL_ACTIVES = {
         "c([N+](=O)[O-])c4)cc3)CC2)=C(c2ccc(Cl)cc2)C1"
     ),
     # Nirmatrelvir proxy — Mpro / SARS-CoV-2 main protease
-    "Mpro": "CC1(C)C2C1C(C(=O)N1CC3C(CCC3)C1C(=O)NC(C#N)CC1CCNC1=O)NC2(=O)C(F)(F)F",
+    "Mpro": "CC(C)(C)[C@H](NC(=O)C(F)(F)F)C(=O)N1CC2(C1)C[C@H](NC(=O)[C@H](C(C)(C)C)NC(=O)C#N)C2",
 }
 
 # Cache pre-computed fingerprints to avoid recalculating on every step
@@ -143,6 +143,7 @@ def _get_active_fp(target_name: str):
             return None
         mol = Chem.MolFromSmiles(smiles)
         if mol is None:
+            logger.warning(f"Reference SMILES for target '{target_name}' is invalid")
             return None
         _active_fps[target_name] = AllChem.GetMorganFingerprintAsBitVect(
             mol, radius=2, nBits=2048
@@ -359,4 +360,26 @@ TASKS = {
         start_smiles=None,
         target_name="Mpro",
     ),
+}
+
+
+def grade_lead_optimization(smiles: str) -> float:
+    """Deterministic grader for lead_optimization (EGFR). Returns score in [0.0, 1.0]."""
+    return float(calculate_final_score(smiles, "EGFR")["score"])
+
+
+def grade_scaffold_hopping(smiles: str) -> float:
+    """Deterministic grader for scaffold_hopping (BCL-2). Returns score in [0.0, 1.0]."""
+    return float(calculate_final_score(smiles, "BCL-2")["score"])
+
+
+def grade_de_novo_design(smiles: str) -> float:
+    """Deterministic grader for de_novo_design (Mpro). Returns score in [0.0, 1.0]."""
+    return float(calculate_final_score(smiles, "Mpro")["score"])
+
+
+TASK_GRADERS = {
+    "lead_optimization": grade_lead_optimization,
+    "scaffold_hopping": grade_scaffold_hopping,
+    "de_novo_design": grade_de_novo_design,
 }
