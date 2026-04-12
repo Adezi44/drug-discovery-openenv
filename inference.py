@@ -17,7 +17,6 @@ BENCHMARK      Benchmark label             (default: drug-discovery)
 
 import os
 import re
-import json
 import time
 import requests
 from typing import List, Optional
@@ -143,7 +142,7 @@ TASK_GUIDANCE = {
     "scaffold_hopping": (
         "You are performing scaffold hopping for BCL-2 inhibition. Keep the key pharmacophore "
         "features (sulfonamide, chlorophenyl, piperazine) but replace the central scaffold "
-        "with a different ring system. The score weights tanimoto similarity heavily (0.50)."
+        "with a different ring system. The score weights tanimoto similarity heavily (0.40)."
     ),
     "de_novo_design": (
         "You are designing a novel Mpro (SARS-CoV-2 main protease) inhibitor from scratch. "
@@ -245,15 +244,6 @@ def run_task(task_id: str, task_config: dict, run_deadline: Optional[float] = No
     """Run a single task episode and emit structured logs."""
     task_start = time.time()
 
-    # Reset episode
-    res = requests.post(f"{ENV_URL}/reset", json={"task_id": task_id}, timeout=30)
-    if res.status_code != 200:
-        import sys
-        print(f"[WARN] Failed to reset task {task_id}: {res.text}", file=sys.stderr, flush=True)
-        return
-
-    reset_data = res.json()
-
     log_start(task=task_id, env=BENCHMARK, model=MODEL_NAME)
 
     history: List[dict]  = []
@@ -263,117 +253,128 @@ def run_task(task_id: str, task_config: dict, run_deadline: Optional[float] = No
     final_score  = 0.0
     done         = False
 
-    # Pre-populate history with the reference molecule metrics (from reset)
-    initial_obs = reset_data.get("initial_observation", {}).get("metrics", {})
-    if initial_obs and task_config.get("start_smiles"):
-        history.append({
-            "smiles":  task_config["start_smiles"],
-            "score":   0.0,         # not yet scored by the grader
-            "metrics": initial_obs,
-        })
-
-    while not done:
-        if run_deadline is not None and time.time() >= run_deadline:
+    try:
+        # Reset episode
+        res = requests.post(f"{ENV_URL}/reset", json={"task_id": task_id}, timeout=30)
+        if res.status_code != 200:
             import sys
-            print(
-                f"[WARN] Global run deadline reached while running task {task_id}",
-                file=sys.stderr,
-                flush=True,
-            )
-            break
+            print(f"[WARN] Failed to reset task {task_id}: {res.text}", file=sys.stderr, flush=True)
+            return
 
-        elapsed = time.time() - task_start
-        if elapsed >= GLOBAL_TIMEOUT_SECS:
-            import sys
-            print(
-                f"[WARN] Task {task_id} stopped due to global timeout "
-                f"({elapsed:.1f}s >= {GLOBAL_TIMEOUT_SECS}s)",
-                file=sys.stderr,
-                flush=True,
-            )
-            break
+        reset_data = res.json()
 
-        if steps_taken >= MAX_STEPS_PER_TASK:
-            import sys
-            print(
-                f"[WARN] Task {task_id} stopped at MAX_STEPS_PER_TASK={MAX_STEPS_PER_TASK}",
-                file=sys.stderr,
-                flush=True,
-            )
-            break
-
-        steps_taken += 1
-        smiles = None
-        step_data = None
-        err_msg = None
-
-        # Retry loop: keep asking LLM until we get a valid molecule or exhaust retries
-        for attempt in range(1, MAX_RETRIES_PER_STEP + 1):
-            smiles = get_next_smiles(task_config, history, attempt=attempt)
-
-            # Validate locally to avoid artificially inflating the agent's attempt count
-            if Chem.MolFromSmiles(smiles) is not None:
-                err_msg = None
-                break
-            else:
-                err_msg = "invalid_smiles"
-                # If we exhausted retries, the invalid SMILES will be submitted to the environment
-                if attempt == MAX_RETRIES_PER_STEP:
-                    break
-
-        if smiles is None:
-            break
-
-        step_res = requests.post(f"{ENV_URL}/step", json={"task_id": task_id, "smiles": smiles}, timeout=30)
-        
-        if step_res.status_code != 200:
-            import sys
-            print(f"[WARN] /step error: {step_res.text}", file=sys.stderr, flush=True)
-            break
-
-        step_data = step_res.json()
-
-        reward_info = step_data["reward"]
-        state_info  = step_data["state"]
-        obs_metrics = step_data["observation"]["metrics"]
-
-        r_val   = float(reward_info["score"])
-        is_done = bool(state_info["done"])
-
-        rewards_list.append(r_val)
-        done    = is_done
-        success = bool(reward_info["is_success"])
-        final_score = float(state_info["current_best_score"])
-
-        log_step(
-            step=steps_taken,
-            action=smiles,
-            reward=r_val,
-            done=done,
-            error=err_msg,
-        )
-
-        # Update history for next step's context
-        if reward_info["is_valid"]:
+        # Pre-populate history with the reference molecule metrics (from reset)
+        initial_obs = reset_data.get("initial_observation", {}).get("metrics", {})
+        if initial_obs and task_config.get("start_smiles"):
             history.append({
-                "smiles":  smiles,
-                "score":   r_val,
-                "metrics": obs_metrics,
+                "smiles":  task_config["start_smiles"],
+                "score":   0.0,         # not yet scored by the grader
+                "metrics": initial_obs,
             })
-            # Keep history bounded
-            if len(history) > HISTORY_WINDOW:
-                # Keep the best 5 and the most recent 3
-                best = sorted(history, key=lambda x: x["score"], reverse=True)[:5]
-                recent = history[-3:]
-                seen = {h["smiles"] for h in best}
-                history = best + [h for h in recent if h["smiles"] not in seen]
 
-    log_end(
-        success=success,
-        steps=steps_taken,
-        score=final_score,
-        rewards=rewards_list,
-    )
+        while not done:
+            if run_deadline is not None and time.time() >= run_deadline:
+                import sys
+                print(
+                    f"[WARN] Global run deadline reached while running task {task_id}",
+                    file=sys.stderr,
+                    flush=True,
+                )
+                break
+
+            elapsed = time.time() - task_start
+            if elapsed >= GLOBAL_TIMEOUT_SECS:
+                import sys
+                print(
+                    f"[WARN] Task {task_id} stopped due to global timeout "
+                    f"({elapsed:.1f}s >= {GLOBAL_TIMEOUT_SECS}s)",
+                    file=sys.stderr,
+                    flush=True,
+                )
+                break
+
+            if steps_taken >= MAX_STEPS_PER_TASK:
+                import sys
+                print(
+                    f"[WARN] Task {task_id} stopped at MAX_STEPS_PER_TASK={MAX_STEPS_PER_TASK}",
+                    file=sys.stderr,
+                    flush=True,
+                )
+                break
+
+            steps_taken += 1
+            smiles = None
+            step_data = None
+            err_msg = None
+
+            # Retry loop: keep asking LLM until we get a valid molecule or exhaust retries
+            for attempt in range(1, MAX_RETRIES_PER_STEP + 1):
+                smiles = get_next_smiles(task_config, history, attempt=attempt)
+
+                # Validate locally to avoid artificially inflating the agent's attempt count
+                if Chem.MolFromSmiles(smiles) is not None:
+                    err_msg = None
+                    break
+                else:
+                    err_msg = "invalid_smiles"
+                    # If we exhausted retries, the invalid SMILES will be submitted to the environment
+                    if attempt == MAX_RETRIES_PER_STEP:
+                        break
+
+            if smiles is None:
+                break
+
+            step_res = requests.post(f"{ENV_URL}/step", json={"task_id": task_id, "smiles": smiles}, timeout=30)
+            
+            if step_res.status_code != 200:
+                import sys
+                print(f"[WARN] /step error: {step_res.text}", file=sys.stderr, flush=True)
+                break
+
+            step_data = step_res.json()
+
+            reward_info = step_data["reward"]
+            state_info  = step_data["state"]
+            obs_metrics = step_data["observation"]["metrics"]
+
+            r_val   = float(reward_info["score"])
+            is_done = bool(state_info["done"])
+
+            rewards_list.append(r_val)
+            done    = is_done
+            success = bool(reward_info["is_success"])
+            final_score = float(state_info["current_best_score"])
+
+            log_step(
+                step=steps_taken,
+                action=smiles,
+                reward=r_val,
+                done=done,
+                error=err_msg,
+            )
+
+            # Update history for next step's context
+            if reward_info["is_valid"]:
+                history.append({
+                    "smiles":  smiles,
+                    "score":   r_val,
+                    "metrics": obs_metrics,
+                })
+                # Keep history bounded
+                if len(history) > HISTORY_WINDOW:
+                    # Keep the best 5 and the most recent 3
+                    best = sorted(history, key=lambda x: x["score"], reverse=True)[:5]
+                    recent = history[-3:]
+                    seen = {h["smiles"] for h in best}
+                    history = best + [h for h in recent if h["smiles"] not in seen]
+
+    finally:
+        log_end(
+            success=success,
+            steps=steps_taken,
+            score=final_score,
+            rewards=rewards_list,
+        )
 
 
 def run_agent() -> None:

@@ -87,7 +87,7 @@ graph TD
 
 1. **Clone & Install**:
    ```bash
-   git clone https://github.com/your-team/drug-discovery-openenv
+   git clone https://github.com/Adezi44/drug-discovery-openenv
    cd drug-discovery-openenv
    pip install -r requirements.txt
    ```
@@ -117,6 +117,17 @@ graph TD
 
 ---
 
+## 📊 Baseline Scores
+
+*Baseline reproduced using `Qwen/Qwen2.5-72B-Instruct` over the provided `inference.py` script.*
+
+| Task | Difficulty | Target | Baseline Score | Success |
+| :--- | :---: | :--- | :---: | :---: |
+| `lead_optimization` | Easy | EGFR | `~0.82` | ✅ |
+| `scaffold_hopping` | Medium | BCL-2 | `~0.60` | ✅ |
+| `de_novo_design` | Hard | Mpro | `~0.75` | ✅ |
+
+---
 
 ## ⚡ API Reference
 
